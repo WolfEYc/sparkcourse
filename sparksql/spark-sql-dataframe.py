@@ -23,7 +23,7 @@ print("Make everyone 10 years older:")
 people.select(people.name, people.age + 10).show()
 
 print("avg friends per age")
-people.groupBy("age").agg(round(avg("friends")).alias("avg_friends")).show()
+people.groupBy("age").agg(round(avg("friends")).alias("avg_friends")).sort("age").show()
 
 spark.stop()
 
