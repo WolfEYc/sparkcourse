@@ -2,6 +2,7 @@ from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as func
 from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType
 import sys
+import pandas as pd
 
 def computeCosineSimilarity(spark, data: DataFrame) -> DataFrame:
   
@@ -39,8 +40,7 @@ def getMovieName(movieNames, movieId):
     return result[0]
 
 
-spark = SparkSession.builder.appName("MovieSimilarities").master("local[*]").getOrCreate()
-spark.sparkContext.setLogLevel("ERROR")  # ty:ignore[possibly-missing-attribute]
+spark = SparkSession.builder.appName("MovieSimilarities").remote("sc://localhost:15002").getOrCreate()
 
 movieNamesSchema = StructType([ \
                                StructField("movieID", IntegerType(), True), \
@@ -52,21 +52,46 @@ moviesSchema = StructType([ \
                      StructField("movieID", IntegerType(), True), \
                      StructField("rating", IntegerType(), True), \
                      StructField("timestamp", LongType(), True)])
-    
-    
-# Create a broadcast dataset of movieID and movieTitle.
-# Apply ISO-885901 charset
-movieNames = spark.read \
-      .option("sep", "|") \
-      .option("charset", "ISO-8859-1") \
-      .schema(movieNamesSchema) \
-      .csv("data/ml-100k/u.item")
 
-# Load up movie data as dataset
-movies = spark.read \
-      .option("sep", "\t") \
-      .schema(moviesSchema) \
-      .csv("data/ml-100k/u.data")
+movieNamesSchema_dict = {
+    "movieID": "int32",
+    "title": "string",
+}
+
+moviesSchema_dict = {
+    "userID": "int32",
+    "movieID": "int32",
+    "rating": "int32",
+    "timestamp": "int64",
+}
+
+movie_names_pd = pd.read_csv(
+    "data/ml-100k/u.item",
+    sep="|",
+    encoding="ISO-8859-1",
+    dtype=movieNamesSchema_dict  # dict equivalent of your Spark schema
+)
+movieNames = spark.createDataFrame(movie_names_pd, movieNamesSchema)
+
+movies_pd = pd.read_csv(
+    "data/ml-100k/u.data",
+    sep="\t",
+    dtype=moviesSchema_dict  # dict equivalent of your Spark schema
+)
+movies = spark.createDataFrame(movies_pd, moviesSchema)
+## Create a broadcast dataset of movieID and movieTitle.
+## Apply ISO-885901 charset
+# movieNames = spark.read \
+#       .option("sep", "|") \
+#       .option("charset", "ISO-8859-1") \
+#       .schema(movieNamesSchema) \
+#       .csv("data/ml-100k/u.item")
+
+# # Load up movie data as dataset
+# movies = spark.read \
+#       .option("sep", "\t") \
+#       .schema(moviesSchema) \
+#       .csv("data/ml-100k/u.data")
 
 
 ratings = movies.select("userId", "movieId", "rating").filter(func.col("rating") >= 4)
