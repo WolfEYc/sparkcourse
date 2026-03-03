@@ -57,20 +57,33 @@ statusExp = r'\s(\d{3})\s'
 generalExp = r'\"(\S+)\s(\S+)\s*(\S*)\"'
 timeExp = r'\[(\d{2}/\w{3}/\d{4}:\d{2}:\d{2}:\d{2} -\d{4})]'
 hostExp = r'(^\S+\.[\S+\.]+\S+)\s'
+userAgentExp = r'\"[^\"]*\" \"([^\"]+)\"'
 
-logsDF = accessLines.select(regexp_extract('value', hostExp, 1).alias('host'),
-                         regexp_extract('value', timeExp, 1).alias('timestamp'),
-                         regexp_extract('value', generalExp, 1).alias('method'),
-                         regexp_extract('value', generalExp, 2).alias('endpoint'),
-                         regexp_extract('value', generalExp, 3).alias('protocol'),
-                         regexp_extract('value', statusExp, 1).cast('integer').alias('status'),
-                         regexp_extract('value', contentSizeExp, 1).cast('integer').alias('content_size'))
+logsDF = accessLines.select(
+    regexp_extract('value', hostExp, 1).alias('host'),
+    regexp_extract('value', timeExp, 1).alias('timestamp'),
+    regexp_extract('value', generalExp, 1).alias('method'),
+    regexp_extract('value', generalExp, 2).alias('endpoint'),
+    regexp_extract('value', generalExp, 3).alias('protocol'),
+    regexp_extract('value', statusExp, 1).cast('integer').alias('status'),
+    regexp_extract('value', contentSizeExp, 1).cast('integer').alias('content_size'),
+    regexp_extract('value', userAgentExp, 1).alias("user_agent"),
+ )
+
+logsDF.createOrReplaceTempView("logs")
 
 # Keep a running count of every access by status code
-statusCountsDF = logsDF.groupBy(logsDF.status).count()
+statusCountsDF = spark.sql("""
+    SELECT user_agent, COUNT(*) as count
+    FROM logs
+    WHERE user_agent IS NOT NULL
+    GROUP BY user_agent
+    ORDER BY count DESC
+    LIMIT 10
+""")
 
 # Kick off our streaming query, dumping results to the console
-query = ( statusCountsDF.writeStream.outputMode("complete").format("console").queryName("counts").start() )
+query = ( statusCountsDF.writeStream.outputMode("complete").format("console").option("truncate", "false").queryName("counts").start() )
 
 # Run forever until terminated
 query.awaitTermination()
